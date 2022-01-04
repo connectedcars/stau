@@ -1,0 +1,41 @@
+version: '3.3'
+
+services:
+   # Create a local database within the containerized network
+   db:
+     image: mysql:5
+     restart: always
+     env_file:
+       - .env
+     ports:
+       - "33061:3306"
+     expose:
+       - 33061
+
+   # Run all migrations to initialize database tables
+   migration:
+     depends_on:
+       - db
+     image: alpine:latest
+     volumes:
+       - ./data_migrations:/data_migrations:ro
+     command: /bin/sh -c "
+       apk add mysql mysql-client &&
+       mysql -h db -u ${MYSQL_USER} --password=${MYSQL_PASSWORD} --database=${MYSQL_DATABASE} < /data_migrations/2020-03-04T163030_Add_all_Stau_tables.sql
+       "
+
+   # Start N copies of the Data Quality contain running the Stau executor
+   # Deploy 5 copies: docker-compose up --scale data-quality=5
+   executor:
+     depends_on:
+       - migration
+     env_file:
+       - .env
+     # Build the current folder as a image
+     build: .
+     #deploy:
+     #  replicas: 1
+     environment:
+       - MYSQL_HOST=db
+       - COMMIT_SHA=compose-test
+       - LOG_LEVEL=INFO
